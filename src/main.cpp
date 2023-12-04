@@ -8,8 +8,8 @@
 
 // Global things
 String printname;
-String inputSerial1 = "";       // a string to hold incoming data
-boolean IsReadySerial1 = false; // whether the string is complete
+String inputSerial2 = "";       // a string to hold incoming data
+boolean IsReadySerial2 = false; // whether the string is complete
 Metro timerFlush = Metro(500);  // a timer to write to sd
 Metro displayUp = Metro(1000);  // a timer to not spam the display
 File logger;                    // a var to actually write to said sd
@@ -25,6 +25,7 @@ float degreeToDecimal(float num, byte sign); // conversion function
 String parseGll(String msg);                 // Parse GLL string function
 String parseRmc(String msg);                 // Parse RMC string function
 String parseGga(String msg);                 // Prase GGA string im tired
+float altitudeGlobal; // Some fucking global thing because I hate parsing
 
 // Run once on startup
 void setup() {
@@ -33,20 +34,25 @@ void setup() {
   // while (!Serial) {
   // }
 
-  // Wait for GPS UART to start
-  Serial.println("Init GPS");
-  Serial1.begin(9600);
-  while (!Serial1) {
-  }
-
   // Wait for display
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("SSD1306 allocation failed"));
-    for (;;)
-      ;
   }
   display.display(); // You must call .display() after draw command to apply
 
+  // Wait for GPS UART to start
+  Serial.println("Init GPS");
+  Serial2.begin(9600);
+  while (!Serial2) {
+  }
+  // // Set GPS UART rate
+  // Serial2.println("PMTK251,115200*1F");
+  // delay(100);
+  // Serial2.end();
+  // delay(100);
+  // Serial2.begin(115200);
+  // while (!Serial2) {
+  // }
   // page 12 of https://cdn-shop.adafruit.com/datasheets/PMTK_A11.pdf
   // checksum generator https://nmeachecksum.eqth.net/
   // you can set a value from 0 (disable) to 5 (output once every 5 pos fixes)
@@ -58,9 +64,11 @@ void setup() {
   // 5  NMEA_SEN_GSV,  // GPGSV interval - GNSS Satellites in View
   // 6-17           ,  // Reserved
   // 18 NMEA_SEN_MCHN, // PMTKCHN interval – GPS channel status
-  Serial1.println("$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28");
-  // Set update loop to 10hz
-  Serial1.println("$PMTK220,100*2F");
+  Serial2.println("$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28");
+  // Set pos fix rate to 5hz
+  Serial2.println("$PMTK300,200,0,0,0,0*2F");
+  // Set NEMA rate to 10hz
+  Serial2.println("$PMTK220,100*2F");
   Serial.println("GPS set");
 
   // Wait for SD stuffs
@@ -96,33 +104,33 @@ void setup() {
   }
 
   // Print guide at top of CSV
-  logger.println("latitude,longitude,speed,");
+  logger.println("latitude,longitude,altitude,speed,");
   logger.flush();
 
   // Do te ting
-  IsReadySerial1 = true;
+  IsReadySerial2 = true;
   Serial.println("Log start");
 }
 
 // Loops forever
 void loop() {
-  if (IsReadySerial1) {
+  if (IsReadySerial2) {
     // Print GPS UART
-    // Serial.print(parseGga(inputSerial1));
-    Serial.print(parseRmc(inputSerial1));
-    // logger.print(parseGga(inputSerial1));
-    logger.print(parseRmc(inputSerial1));
+    // Serial.print(parseRmc(inputSerial2));
+    Serial.println(parseGga(inputSerial2));
+    Serial.println(parseRmc(inputSerial2));
+    logger.print(parseRmc(inputSerial2));
 
     // Update display
     if (displayUp.check()) {
       display.clearDisplay();
       drawThing(printname, "top");
-      drawThing(parseGga(inputSerial1), "bot");
+      drawThing(parseGga(inputSerial2), "bot");
     }
 
     // Reset vars
-    inputSerial1 = "";
-    IsReadySerial1 = false;
+    inputSerial2 = "";
+    IsReadySerial2 = false;
   }
 
   // Flush if timer ticked
@@ -132,15 +140,15 @@ void loop() {
 }
 
 // Run on new byte from UART 1
-void serialEvent1() {
-  while (Serial1.available() && IsReadySerial1 == false) {
-    char nextChar = char(Serial1.read()); // Cast UART data to char
+void serialEvent2() {
+  while (Serial2.available() && IsReadySerial2 == false) {
+    char nextChar = char(Serial2.read()); // Cast UART data to char
 
-    inputSerial1 += nextChar; // Append nextChar to string
+    inputSerial2 += nextChar; // Append nextChar to string
 
     // Break the while statement once the line ends
     if (nextChar == '\n') {
-      IsReadySerial1 = true;
+      IsReadySerial2 = true;
     }
   }
 }
@@ -198,8 +206,8 @@ String parseGll(String msg) {
   char mode = msg[i];
 
   // set output string to whatever
-  String output = String(degreeToDecimal(lat, NS), 7) + "," +
-                  String(degreeToDecimal(lon, EW), 7) + "," + '\n';
+  String output = String(degreeToDecimal(lat, NS), 10) + "," +
+                  String(degreeToDecimal(lon, EW), 10) + "," + '\n';
 
   return output;
 }
@@ -283,9 +291,9 @@ String parseRmc(String msg) {
   char status = msg[i];
 
   // set output string to whatever
-  String output = String(degreeToDecimal(lat, NS), 7) + "," +
-                  String(degreeToDecimal(lon, EW), 7) + "," + String(speed, 4) +
-                  "," + '\n';
+  String output = String(degreeToDecimal(lat, NS), 10) + "," +
+                  String(degreeToDecimal(lon, EW), 10) + "," +
+                  String(altitudeGlobal, 1) + "," + '\n';
 
   return output;
 }
@@ -359,6 +367,7 @@ String parseGga(String msg) {
   // altitude
   i += strlen(&msg[i]) + 1;
   float altitude = atof(&msg[i]);
+  altitudeGlobal = altitude;
 
   // altitude unit
   i += strlen(&msg[i]) + 1;
@@ -415,7 +424,7 @@ float degreeToDecimal(float num, byte sign) {
 void drawThing(String msg, String pos) {
   display.setTextSize(1);              // Normal 1:1 pixel scale
   display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.cp437(true);                 // Use full 256 char 'Code Page 437' font
+  display.cp437(true);                 // Use full 256 char 'Code Page 437'
 
   if (pos == "top") {
     display.setCursor(0, 0);
