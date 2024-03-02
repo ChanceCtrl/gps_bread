@@ -1,0 +1,1 @@
+Yoinking code and a spare logger board from [this](https://github.com/KSU-MS/KS7e_eveLogger) project. It'll have a tiny box and a button so it can log specefic points as well. With support for both the adafruit v3 gps and the vector nav unit we have.
