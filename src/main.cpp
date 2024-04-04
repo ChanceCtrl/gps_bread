@@ -3,53 +3,27 @@
 #include <SD.h>
 
 // Global things
-String printname;
 Metro timerFlush = Metro(500); // a timer to write to sd
 File track;                    // a var to actually write to said sd
 File points;                   // Another file class guy to store points
 
-#define POL 13
+// Button handeler to re-use later
+#include "pol.hpp"
+polButton theguy;
 
-// #define HAS_GPS
-#define HAS_NAV
-// #define HAS_DIS
-
-#ifdef HAS_GPS
-#include "gps.hpp"
-#endif
-
-#ifdef HAS_NAV
+// Vector Nav things
 #include "nav.hpp"
-navData nd;
-#endif
-
-#ifdef HAS_DIS
-#include "dis.hpp"
-#endif
+vNav nd;
 
 // Run once on startup
 void setup() {
-  // Setup pin for point logging
-  pinMode(POL, INPUT_PULLDOWN);
-
   // Wait for Serial to start
   Serial.begin(9600);
-
-#ifdef HAS_GPS
-  init_GPS();
-#endif
-
-#ifdef HAS_NAV
-  init_NAV();
-#endif
-
-#ifdef HAS_DIS
-  // Wait for display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-  }
-  display.display(); // You must call .display() after draw command to apply
-#endif
+  // Get vector nav boi ready
+  nd.init_NAV();
+  // Setup button for point logging
+  pinMode(14, INPUT_PULLUP);
+  theguy.init(14, 500.0, digitalRead, true);
 
   // Wait for SD stuffs
   delay(500);
@@ -58,6 +32,7 @@ void setup() {
   }
   delay(500);
 
+  // TODO: Make this not look braindead
   char filename[] = "GPS_0000.CSV";
   for (uint16_t i = 0; i < 10000; i++) {
     filename[4] = i / 1000 + '0';
@@ -72,8 +47,6 @@ void setup() {
       Serial.println("Ran out of names, clear SD");
     }
   }
-
-  printname = filename; // For display redraws
 
   char filename2[] = "PPS_0000.CSV";
   for (uint16_t i = 0; i < 10000; i++) {
@@ -97,78 +70,33 @@ void setup() {
   // Print another guide
   points.println("latitude, longitude");
   points.flush();
-
-  // Do te ting
-  Serial.println("Log start");
 }
 
 // Loops forever
 void loop() {
-#ifdef HAS_GPS
-  if (ready_serial8) {
-    // If new line is ready add to log
-    track.println(parse_rmc(input_serial8));
-
-// Display sats and lock
-#ifdef HAS_DIS
-    if (displayUp.check()) {
-      display.clearDisplay();
-      drawThing(printname, "top");
-      drawThing(parse_gga(input_serial8), "bot");
-    }
-#endif
-
-    // Reset vars
-    ready_serial8 = false;
-  }
-#endif
-
-#ifdef HAS_NAV
-  // Reset nav state
-  nav_ready = false;
-
   // If we have more than 4 new bytes, see if its a new line
-  if (Serial8.available() > 4)
-    check_sync_byte();
+  if (Serial8.available() > 4) {
+    // If its a new line then do the things
+    if (nd.check_sync_byte()) {
+      // Get NAV data
+      nd.read_nav_data();
 
-  // If check_sync_byte() set is_nav_ready true, log data
-  if (nav_ready) {
-    // Get NAV data
-    nd = read_nav_data();
-
-    track.print(String(nd.r_pos[0], 10) + ",");
-    track.println(String(nd.r_pos[1], 10));
+      track.print(String(nd.r_pos[0], 10) + ",");
+      track.println(String(nd.r_pos[1], 10));
+    }
   }
 
-// Display sats and lock
-#ifdef HAS_DIS
-  if (displayUp.check()) {
-    display.clearDisplay();
-    drawThing(printname, "top");
-    drawThing(parse_gga(input_serial8), "bot");
+  if (theguy.state == true && theguy.held == false) {
+    points.print(String(nd.r_pos[0], 10) + ",");
+    points.println(String(nd.r_pos[1], 10));
   }
-#endif
-#endif
 
   // Flush if timer ticked
   if (timerFlush.check()) {
     track.flush();
     points.flush();
   }
+
+  // Update button state
+  theguy.update();
 }
-
-#ifdef HAS_GPS
-void serialEvent8() {
-  // Wait till we want more data
-  while (Serial8.available() && ready_serial8 == false) {
-    char nextChar = char(Serial8.read()); // Cast UART data to char
-
-    input_serial8 += nextChar; // Append nextChar to string
-
-    // Break the while statement once the line ends
-    if (nextChar == '\n') {
-      ready_serial8 = true;
-    }
-  }
-}
-#endif

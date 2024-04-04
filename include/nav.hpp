@@ -8,12 +8,12 @@
 #include <Arduino.h>
 
 // Some global vars
-bool nav_ready = false; // check if the sync byte (0xFA) is detected
-byte in[90];            // array to save data send from the IMU
+byte in[90]; // array to save data send from the IMU
 
 // Custom struct for reading shit from
-class navData {
+class vNav {
 public:
+  // Holders for nav data
   uint64_t r_ti;
   int16_t r_gyro[3];
   int16_t r_rate[3];
@@ -21,13 +21,13 @@ public:
   int16_t r_vel[3];
   int16_t r_acl[3];
   uint16_t r_ins;
-};
 
-// Some functions or something idk
-navData read_nav_data();    // read nav data
-void check_sync_byte(void); // check for new msg
-unsigned short calculate_imu_crc(byte data[], unsigned int length); // check msg
-void init_NAV();
+  // Some functions or something idk
+  void init_NAV();
+  vNav read_nav_data();       // read nav data
+  bool check_sync_byte(void); // check for new msg
+  unsigned short calc_imu_crc(byte data[], unsigned int length); // check msg
+};
 
 // GPS time data
 union {
@@ -117,7 +117,7 @@ union {
   byte b[2];
 } checksum;
 
-void init_NAV() {
+void vNav::init_NAV() {
   // Wait for NAV UART to start
   Serial.println("Init NAV");
   Serial8.begin(115200);
@@ -129,7 +129,7 @@ void init_NAV() {
 }
 
 // Read the NAV bytes
-navData read_nav_data() {
+vNav vNav::read_nav_data() {
   // Read the bytes into an array
   Serial8.readBytes(in, 87);
 
@@ -138,7 +138,7 @@ navData read_nav_data() {
   checksum.b[1] = in[85];
 
   // If the checksum is correct
-  if (calculate_imu_crc(in, 85) == checksum.s) {
+  if (calc_imu_crc(in, 85) == checksum.s) {
     // Calc time
     for (int i = 0; i < 8; i++) {
       ti.b[i] = in[3 + i];
@@ -177,7 +177,7 @@ navData read_nav_data() {
     }
 
     // Return values in readable format, and offsetted then casted for CAN
-    return navData{
+    return vNav{
         ti.v,
         {int16_t(yaw.f * 100), int16_t(rol.f * 100), int16_t(pit.f * 100)},
         {int16_t(W_x.f * 100), int16_t(W_y.f * 100), int16_t(W_z.f * 100)},
@@ -189,30 +189,32 @@ navData read_nav_data() {
   }
 
   // Return nothing if shits fucked
-  return navData{};
+  return vNav{};
 }
 
 // Check for the sync byte (0xFA)
-void check_sync_byte(void) {
+bool vNav::check_sync_byte(void) {
   for (int i = 0; i < 6; i++) {
     Serial8.readBytes(in, 1);
     if (in[0] == 0xFA) {
-      nav_ready = true;
-      break;
+      return true;
+    } else {
+      return false;
     }
   }
+  return false;
 }
 
 // Calculate the 16-bit CRC for the given ASCII or binary message.
-unsigned short calculate_imu_crc(byte data[], unsigned int length) {
+unsigned short vNav::calc_imu_crc(byte data[], unsigned int length) {
   unsigned int i;
   unsigned short crc = 0;
   for (i = 0; i < length; i++) {
-    crc = (byte)(crc >> 8) | (crc << 8);
-    crc ^= data[i];
-    crc ^= (byte)(crc & 0xff) >> 4;
-    crc ^= crc << 12;
-    crc ^= (crc & 0x00ff) << 5;
+    crc = (byte)(crc >> 8) | (crc << 8); // Rotate crc left 8 bits
+    crc ^= data[i];                      // XOR crc with data[i]
+    crc ^= (byte)(crc & 0xff) >> 4;      // XOR crc with lower 4 bits of crc
+    crc ^= crc << 12;                    // Rotate crc left 12 bits
+    crc ^= (crc & 0x00ff) << 5; // XOR crc w lower 8 bits & shift left 5 bits
   }
   return crc;
 }
