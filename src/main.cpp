@@ -76,19 +76,18 @@ void setup() {
 void loop() {
   // If we have more than 4 new bytes, see if its a new line
   if (Serial8.available() > 4) {
-    // If its a new line then do the things
     if (nd.check_sync_byte()) {
       // Get NAV data
       nd.read_nav_data();
 
-      track.print(String(nd.r_pos[0], 10) + ",");
-      track.println(String(nd.r_pos[1], 10));
+      track.print(String(nd.lat_lon[0], 10) + ",");
+      track.println(String(nd.lat_lon[1], 10));
     }
   }
 
   if (theguy.state == true && theguy.held == false) {
-    points.print(String(nd.r_pos[0], 10) + ",");
-    points.println(String(nd.r_pos[1], 10));
+    points.print(String(nd.lat_lon[0], 10) + ",");
+    points.println(String(nd.lat_lon[1], 10));
   }
 
   // Flush if timer ticked

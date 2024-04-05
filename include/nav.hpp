@@ -7,24 +7,24 @@
 
 #include <Arduino.h>
 
-// Some global vars
-byte in[90]; // array to save data send from the IMU
-
 // Custom struct for reading shit from
 class vNav {
+private:
+  byte in[90];
+
 public:
   // Holders for nav data
-  uint64_t r_ti;
-  int16_t r_gyro[3];
-  int16_t r_rate[3];
-  int32_t r_pos[2];
-  int16_t r_vel[3];
-  int16_t r_acl[3];
-  uint16_t r_ins;
+  uint64_t time;
+  double lat_lon[2];
+  uint16_t ins_state;
+  int16_t ang_rate[3];
+  int16_t gyro[3];
+  int16_t vel[3];
+  int16_t acl[3];
 
   // Some functions or something idk
   void init_NAV();
-  vNav read_nav_data();       // read nav data
+  void read_nav_data();       // read nav data
   bool check_sync_byte(void); // check for new msg
   unsigned short calc_imu_crc(byte data[], unsigned int length); // check msg
 };
@@ -129,7 +129,7 @@ void vNav::init_NAV() {
 }
 
 // Read the NAV bytes
-vNav vNav::read_nav_data() {
+void vNav::read_nav_data() {
   // Read the bytes into an array
   Serial8.readBytes(in, 87);
 
@@ -139,12 +139,18 @@ vNav vNav::read_nav_data() {
 
   // If the checksum is correct
   if (calc_imu_crc(in, 85) == checksum.s) {
-    // Calc time
+    // Get Time & Position
     for (int i = 0; i < 8; i++) {
       ti.b[i] = in[3 + i];
+      lat.b[i] = in[35 + i];
+      lon.b[i] = in[43 + i];
+      alt.b[i] = in[51 + i];
     }
+    time = ti.v;
+    lat_lon[0] = lat.v;
+    lat_lon[1] = lon.v;
 
-    // Calc Attitude and Rates
+    // Get Attitude, Rates, Velocity & Acceleration
     for (int i = 0; i < 4; i++) {
       yaw.b[i] = in[11 + i];
       pit.b[i] = in[15 + i];
@@ -152,17 +158,6 @@ vNav vNav::read_nav_data() {
       W_x.b[i] = in[23 + i];
       W_y.b[i] = in[27 + i];
       W_z.b[i] = in[31 + i];
-    }
-
-    // Calc Position
-    for (int i = 0; i < 8; i++) {
-      lat.b[i] = in[35 + i];
-      lon.b[i] = in[43 + i];
-      alt.b[i] = in[51 + i];
-    }
-
-    // Calc Velocity & Acceleration
-    for (int i = 0; i < 4; i++) {
       v_n.b[i] = in[59 + i];
       v_e.b[i] = in[63 + i];
       v_d.b[i] = in[67 + i];
@@ -170,26 +165,25 @@ vNav vNav::read_nav_data() {
       a_y.b[i] = in[75 + i];
       a_z.b[i] = in[79 + i];
     }
+    gyro[0] = int16_t(yaw.f * 100);
+    gyro[1] = int16_t(rol.f * 100);
+    gyro[2] = int16_t(pit.f * 100);
+    ang_rate[0] = int16_t(W_x.f * 100);
+    ang_rate[1] = int16_t(W_y.f * 100);
+    ang_rate[2] = int16_t(W_z.f * 100);
+    vel[0] = int16_t(v_n.f * 100);
+    vel[1] = int16_t(v_e.f * 100);
+    vel[2] = int16_t(v_d.f * 100);
+    acl[0] = int16_t(a_x.f * 100);
+    acl[1] = int16_t(a_y.f * 100);
+    acl[2] = int16_t(a_z.f * 100);
 
-    // "Calc" INS state
+    // Get INS state
     for (int i = 0; i < 2; i++) {
       ins.b[i] = in[83 + i];
     }
-
-    // Return values in readable format, and offsetted then casted for CAN
-    return vNav{
-        ti.v,
-        {int16_t(yaw.f * 100), int16_t(rol.f * 100), int16_t(pit.f * 100)},
-        {int16_t(W_x.f * 100), int16_t(W_y.f * 100), int16_t(W_z.f * 100)},
-        {int32_t(lat.v * 10000000), int32_t(lon.v * 10000000)},
-        {int16_t(v_n.f * 100), int16_t(v_e.f * 100), int16_t(v_d.f * 100)},
-        {int16_t(a_x.f * 100), int16_t(a_y.f * 100), int16_t(a_z.f * 100)},
-        ins.f,
-    };
+    ins_state = ins.f;
   }
-
-  // Return nothing if shits fucked
-  return vNav{};
 }
 
 // Check for the sync byte (0xFA)
@@ -198,8 +192,7 @@ bool vNav::check_sync_byte(void) {
     Serial8.readBytes(in, 1);
     if (in[0] == 0xFA) {
       return true;
-    } else {
-      return false;
+      break;
     }
   }
   return false;
