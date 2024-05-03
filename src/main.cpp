@@ -12,15 +12,15 @@ File points;                   // Another file class guy to store points
 polButton theguy;
 
 // Vector Nav things
-#include "nav.hpp"
-vNav nd;
+#include <vectornav.hpp>
+vNav nd(Serial8);
 
 // Run once on startup
 void setup() {
   // Wait for Serial to start
   Serial.begin(9600);
   // Get vector nav boi ready
-  nd.init_NAV();
+  nd.init(Logger);
   // Setup button for point logging
   pinMode(14, INPUT_PULLUP);
   theguy.init(14, 500.0, digitalRead, true);
@@ -78,10 +78,10 @@ void loop() {
   if (Serial8.available() > 4) {
     if (nd.check_sync_byte()) {
       // Get NAV data
-      nd.read_nav_data();
+      nd.read_data();
 
-      track.print(String(nd.lat_lon[0], 10) + ",");
-      track.println(String(nd.lat_lon[1], 10));
+      track.print(String(nd.lat_lon[0]) + ",");
+      track.println(String(nd.lat_lon[1]));
     }
   }
 
